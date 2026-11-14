@@ -9,6 +9,8 @@ export interface StoredMessage {
   senderId: string;
   text: string;
   createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
 }
 
 export interface StoreMessageResult {
@@ -38,12 +40,28 @@ function readStoredMessage(
   const senderId: unknown = data?.senderId;
   const text: unknown = data?.text;
   const createdAt: unknown = data?.createdAt;
+  const editedAt: unknown = data?.editedAt;
+  const deletedAt: unknown = data?.deletedAt;
 
   if (typeof senderId !== "string" || typeof text !== "string" || !(createdAt instanceof Timestamp)) {
     throw new Error("Stored Firestore message has an invalid shape");
   }
 
-  return { messageId, senderId, text, createdAt: createdAt.toDate().toISOString() };
+  if (editedAt !== undefined && editedAt !== null && !(editedAt instanceof Timestamp)) {
+    throw new Error("Stored Firestore message has an invalid edit timestamp");
+  }
+  if (deletedAt !== undefined && deletedAt !== null && !(deletedAt instanceof Timestamp)) {
+    throw new Error("Stored Firestore message has an invalid delete timestamp");
+  }
+
+  return {
+    messageId,
+    senderId,
+    text,
+    createdAt: createdAt.toDate().toISOString(),
+    editedAt: editedAt instanceof Timestamp ? editedAt.toDate().toISOString() : null,
+    deletedAt: deletedAt instanceof Timestamp ? deletedAt.toDate().toISOString() : null
+  };
 }
 
 export async function storeMessage(
@@ -81,6 +99,63 @@ export async function storeMessage(
 
   const snapshot = await reference.get();
   return { message: readStoredMessage(snapshot.id, snapshot.data()), created: true };
+}
+
+export async function editStoredMessage(
+  chatId: string,
+  messageId: string,
+  senderId: string,
+  text: string
+): Promise<StoredMessage> {
+  const reference = getFirestoreDb()
+    .collection("chats")
+    .doc(chatId)
+    .collection("messages")
+    .doc(messageId);
+
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new ApiError(404, "Message was not found in this chat");
+    if (snapshot.get("senderId") !== senderId) {
+      throw new ApiError(403, "You can only edit your own messages");
+    }
+    if (snapshot.get("deletedAt")) {
+      throw new ApiError(409, "A deleted message cannot be edited");
+    }
+
+    transaction.update(reference, { text, editedAt: FieldValue.serverTimestamp() });
+  });
+
+  const updated = await reference.get();
+  return readStoredMessage(updated.id, updated.data());
+}
+
+export async function deleteStoredMessage(
+  chatId: string,
+  messageId: string,
+  senderId: string
+): Promise<StoredMessage> {
+  const reference = getFirestoreDb()
+    .collection("chats")
+    .doc(chatId)
+    .collection("messages")
+    .doc(messageId);
+
+  await getFirestoreDb().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new ApiError(404, "Message was not found in this chat");
+    if (snapshot.get("senderId") !== senderId) {
+      throw new ApiError(403, "You can only delete your own messages");
+    }
+    if (snapshot.get("deletedAt")) {
+      throw new ApiError(409, "Message is already deleted");
+    }
+
+    transaction.update(reference, { text: "", deletedAt: FieldValue.serverTimestamp() });
+  });
+
+  const updated = await reference.get();
+  return readStoredMessage(updated.id, updated.data());
 }
 
 export async function getMessagePage(

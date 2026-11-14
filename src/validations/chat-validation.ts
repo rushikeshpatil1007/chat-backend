@@ -10,6 +10,21 @@ export const createChatBodySchema = z
     message: "A chat requires two different users"
   });
 
+export const createGroupChatBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  memberIds: z.array(z.string().uuid()).min(2).max(99)
+}).strict();
+
+export const groupMembersBodySchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1).max(99)
+}).strict();
+
+export const groupChatParamsSchema = z.object({ chatId: z.string().uuid() });
+export const groupMemberParamsSchema = z.object({
+  chatId: z.string().uuid(),
+  userId: z.string().uuid()
+});
+
 export type CreateChatBody = z.infer<typeof createChatBodySchema>;
 
 export const sendMessageParamsSchema = z.object({
@@ -22,6 +37,15 @@ export const sendMessageBodySchema = z
     text: z.string().trim().min(1).max(5000)
   })
   .strict();
+
+export const editMessageBodySchema = z.object({
+  text: z.string().trim().min(1).max(5000)
+}).strict();
+
+export const messageMutationParamsSchema = z.object({
+  chatId: z.string().uuid(),
+  messageId: z.string().regex(/^[A-Za-z0-9_-]{1,1500}$/)
+});
 
 export const idempotencyKeySchema = z.string().trim().min(1).max(128);
 

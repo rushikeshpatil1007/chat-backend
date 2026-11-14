@@ -1,6 +1,10 @@
 import { ApiError } from "../errors/api-error";
 import { isChatMember } from "../repositories/chat-repository";
-import { storeMessage } from "../repositories/message-repository";
+import {
+  deleteStoredMessage,
+  editStoredMessage,
+  storeMessage
+} from "../repositories/message-repository";
 
 export async function sendMessage(
   chatId: string,
@@ -22,4 +26,33 @@ export async function sendMessage(
   }
 
   return storeMessage(normalizedChatId, normalizedUserId, text, idempotencyKey);
+}
+
+export async function editMessage(
+  chatId: string,
+  authenticatedUserId: string,
+  messageId: string,
+  text: string
+) {
+  const userId = authenticatedUserId.toLowerCase();
+  const normalizedChatId = chatId.toLowerCase();
+  if (!(await isChatMember(normalizedChatId, userId))) {
+    throw new ApiError(403, "You are not a member of this chat");
+  }
+
+  return editStoredMessage(normalizedChatId, messageId, userId, text);
+}
+
+export async function deleteMessage(
+  chatId: string,
+  authenticatedUserId: string,
+  messageId: string
+) {
+  const userId = authenticatedUserId.toLowerCase();
+  const normalizedChatId = chatId.toLowerCase();
+  if (!(await isChatMember(normalizedChatId, userId))) {
+    throw new ApiError(403, "You are not a member of this chat");
+  }
+
+  return deleteStoredMessage(normalizedChatId, messageId, userId);
 }
